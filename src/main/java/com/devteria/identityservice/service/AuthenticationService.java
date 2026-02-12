@@ -1,37 +1,60 @@
 package com.devteria.identityservice.service;
 
 import com.devteria.identityservice.dto.request.AuthenticationRequest;
+import com.devteria.identityservice.dto.request.IntrospectRequest;
 import com.devteria.identityservice.dto.response.AuthenticationResponse;
+import com.devteria.identityservice.dto.response.IntrospectResponse;
 import com.devteria.identityservice.exception.AppException;
 import com.devteria.identityservice.exception.ErrorCode;
 import com.devteria.identityservice.repository.UserRepository;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jose.crypto.MACVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.experimental.NonFinal;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.text.ParseException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 
 @Slf4j
 @Service
-@Builder
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 @RequiredArgsConstructor
 public class AuthenticationService {
     UserRepository userRepository;
 
     @NonFinal
-    protected  static final String SIGNER_KEY = "cbe6f3d10f77b1cb67fed5332728200e2b3e2f5a421872a2b1bcc099b0e39846";
+    @Value( "${jwt.signerKey}")
+    protected String SIGNER_KEY;
+
+    public IntrospectResponse introspect (IntrospectRequest request)
+            throws JOSEException, ParseException {
+        var token = request.getToken();
+
+        JWSVerifier verifier = new MACVerifier(SIGNER_KEY.getBytes());
+
+        SignedJWT signedJWT = SignedJWT.parse(token);
+
+        Date expirationTime = signedJWT.getJWTClaimsSet().getExpirationTime();
+
+        var verified = signedJWT.verify(verifier);
+
+        return IntrospectResponse.builder()
+                .valid(verified && expirationTime.after(new Date()))
+                .build();
+    }
 
     public AuthenticationResponse authenticate (AuthenticationRequest request){
         var user = userRepository.findByUsername(request.getUsername())
